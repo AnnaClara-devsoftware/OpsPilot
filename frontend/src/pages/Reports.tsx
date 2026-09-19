@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
-import { listReports, reportDownloadUrl } from "../services/analysisService";
+import { downloadReport, listReports } from "../services/analysisService";
 import { ReportItem } from "../types";
 
 const FORMAT_ICON: Record<string, string> = { html: "🌐", json: "🧾", csv: "📊" };
@@ -22,19 +22,17 @@ export default function Reports() {
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {reports.length === 0 && <p className="text-slate-500">Nenhum relatorio gerado ainda.</p>}
           {reports.map((r) => (
-            <a
+            <button
               key={r.id}
-              href={reportDownloadUrl(r.id)}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-900"
+              onClick={() => downloadReport(r.id, r.format)}
+              className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-900 text-left"
             >
               <div>
                 <p className="font-semibold uppercase text-white">{r.format}</p>
                 <p className="text-xs text-slate-500">{new Date(r.created_at).toLocaleString("pt-BR")}</p>
               </div>
               <span className="text-2xl">{FORMAT_ICON[r.format] ?? "📄"}</span>
-            </a>
+            </button>
           ))}
         </div>
       </main>

@@ -39,3 +39,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const { data } = await api.get<DashboardStats>("/dashboard/stats");
   return data;
 }
+export async function downloadReport(reportId: string, format: string): Promise<void> {
+  const response = await api.get(`/reports/${reportId}/download`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `report_${reportId}.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
