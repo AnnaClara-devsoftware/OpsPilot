@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>OpsPilot - Relatorio de {{ project_name }}</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; background:#0b0f19; color:#e5e7eb; margin:0; padding:2rem; }
+  h1 { color:#60a5fa; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin:1.5rem 0; }
+  .card { background:#131a2b; border:1px solid #1f2937; border-radius:10px; padding:1rem; }
+  .card .value { font-size:1.8rem; font-weight:700; color:#34d399; }
+  .card .label { color:#9ca3af; font-size:0.85rem; text-transform:uppercase; }
+  table { width:100%; border-collapse:collapse; margin-top:1rem; }
+  th,td { text-align:left; padding:0.5rem; border-bottom:1px solid #1f2937; font-size:0.9rem; }
+  th { color:#9ca3af; }
+  .tag { display:inline-block; background:#1f2937; padding:0.15rem 0.5rem; border-radius:6px; font-size:0.75rem; }
+  .danger { color:#f87171; }
+</style>
+</head>
+<body>
+  <h1>OpsPilot &mdash; Relatorio de Analise</h1>
+  <p>Projeto: <strong>{{ project_name }}</strong> &middot; Gerado em {{ generated_at }}</p>
+
+  <div class="grid">
+    <div class="card"><div class="value">{{ summary.total_files }}</div><div class="label">Arquivos</div></div>
+    <div class="card"><div class="value">{{ summary.total_loc }}</div><div class="label">Linhas de codigo</div></div>
+    <div class="card"><div class="value">{{ summary.todo_count }}</div><div class="label">TODOs/FIXMEs</div></div>
+    <div class="card"><div class="value danger">{{ summary.secret_count }}</div><div class="label">Possiveis segredos</div></div>
+    <div class="card"><div class="value">{{ summary.average_complexity_score }}</div><div class="label">Complexidade media</div></div>
+  </div>
+
+  <h2>Linguagens</h2>
+  <table>
+    <tr><th>Linguagem</th><th>Linhas</th><th>Arquivos</th></tr>
+    {% for lang, loc in summary.languages.items() %}
+    <tr><td>{{ lang }}</td><td>{{ loc }}</td><td>{{ summary.language_file_counts.get(lang, 0) }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Dependencias detectadas</h2>
+  <table>
+    <tr><th>Arquivo</th><th>Gerenciador</th></tr>
+    {% for path, manager in summary.dependencies.items() %}
+    <tr><td>{{ path }}</td><td><span class="tag">{{ manager }}</span></td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Arquivos grandes</h2>
+  <table>
+    <tr><th>Arquivo</th><th>Tamanho (bytes)</th></tr>
+    {% for f in summary.large_files %}
+    <tr><td>{{ f.path }}</td><td>{{ f.size_bytes }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Arquivos mais complexos</h2>
+  <table>
+    <tr><th>Arquivo</th><th>Pontos de ramificacao</th><th>LOC</th><th>Score</th></tr>
+    {% for c in summary.most_complex_files %}
+    <tr><td>{{ c.file_path }}</td><td>{{ c.branch_points }}</td><td>{{ c.lines_of_code }}</td><td>{{ c.complexity_score }}</td></tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
