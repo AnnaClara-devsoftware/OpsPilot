@@ -1,164 +1,192 @@
-# 🚀 OpsPilot
+# OpsPilot
 
-**Plataforma web para automação e análise de projetos de software.**
+> Plataforma web para análise estática, auditoria de código e métricas de projetos de software.
 
-O usuário envia um projeto (arquivo `.zip`) e o OpsPilot analisa automaticamente estrutura, linguagens, linhas de código, dependências, arquivos grandes, TODOs/FIXMEs, possíveis segredos expostos e complexidade — tudo processado de forma assíncrona por workers, com dashboard, histórico e relatórios exportáveis (HTML, JSON, CSV).
+[![Python Version](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-Projeto construído para demonstrar competências de portfólio em: **Python, arquitetura de sistemas, automação, filas/workers, análise estática de código, backend, banco de dados e deploy em produção.**
+O **OpsPilot** é uma plataforma distribuída projetada para automatizar o processo de análise estática em arquivos de código fonte (`.zip`). A aplicação processa métricas de linhas de código (LOC), dependências, arquivos de grande porte, pendências (`TODO`/`FIXME`), complexidade ciclomática e varredura heurística de vazamento de segredos/credenciais. 
 
----
-
-## Índice
-
-1. [Visão geral](#visão-geral)
-2. [Arquitetura](#arquitetura)
-3. [Stack tecnológica](#stack-tecnológica)
-4. [Estrutura de pastas](#estrutura-de-pastas)
-5. [Funcionalidades](#funcionalidades)
-6. [Rodando localmente](#rodando-localmente)
-7. [Variáveis de ambiente](#variáveis-de-ambiente)
-8. [Testes](#testes)
-9. [Deploy em produção](#deploy-em-produção)
-10. [Segurança](#segurança)
-11. [Guia passo a passo para iniciantes](#guia-passo-a-passo-para-iniciantes)
+Todo o processamento de arquivos é executado de forma **assíncrona via workers dedicados**, garantindo alta disponibilidade e separação de responsabilidades na infraestrutura.
 
 ---
 
-## Visão geral
+## Sumário
 
-```
-Usuário → Upload .zip → API valida e salva → Job criado (pending)
-                                                   │
-                                                   ▼
-                                  Worker Celery pega o job (processing)
-                                                   │
-                          extrai zip → varre arquivos → calcula métricas
-                          → detecta TODOs/segredos → gera relatórios
-                                                   │
-                                                   ▼
-                                  Job = completed (ou failed com retry)
-                                                   │
-                                                   ▼
-                     Dashboard exibe estatísticas, histórico e relatórios
-```
+- [Visão Geral e Fluxo de Dados](#-visão-geral-e-fluxo-de-dados)
+- [Arquitetura de Sistemas](#-arquitetura-de-sistemas)
+- [Stack Tecnológica](#-stack-tecnológica)
+- [Estrutura do Repositório](#-estrutura-do-repositório)
+- [Principais Funcionalidades](#-principais-funcionalidades)
+- [Execução Local (Docker & Compose)](#-execução-local-docker--compose)
+- [Execução para Desenvolvimento (Sem Docker)](#-execução-para-desenvolvimento-sem-docker)
+- [Variáveis de Ambiente](#-variáveis-de-ambiente)
+- [Suíte de Testes](#-suíte-de-testes)
+- [Implantação e Infraestrutura (Deploy)](#-implantação-e-infraestrutura-deploy)
+- [Práticas de Segurança](#-práticas-de-segurança)
+- [Autora](#-autora)
 
-## Arquitetura
+---
 
-```
-┌─────────────────┐        HTTPS/REST        ┌──────────────────────┐
-│   Frontend       │ ────────────────────────▶│   Backend (FastAPI)   │
-│ React+TS+Vite     │◀──────────────────────── │  API + Auth JWT       │
-│ Tailwind (Vercel) │                          │  (Render)             │
-└─────────────────┘                          └──────────┬────────────┘
-                                                          │
-                                    ┌─────────────────────┼─────────────────────┐
-                                    ▼                     ▼                     ▼
-                          ┌─────────────────┐   ┌──────────────────┐  ┌──────────────────┐
-                          │  PostgreSQL      │   │  Redis (fila)     │  │  Workers Celery   │
-                          │  (Neon)          │   │  (Upstash)        │  │  (Render worker)  │
-                          └─────────────────┘   └──────────────────┘  └──────────────────┘
-```
+## Visão Geral e Fluxo de Dados
 
-**Fluxo de camadas do backend:** `api/` (rotas HTTP) → `services/` (regras de negócio e análise) → `repositories/` (acesso a dados) → `models/` (SQLAlchemy) — com `schemas/` (Pydantic) validando entrada/saída, `workers/` executando os jobs assíncronos e `core/` concentrando configuração, segurança e infraestrutura compartilhada.
+[ Usuário ] ──► (Upload .zip) ──► [ FastAPI ] ──► (Cria Job: 'pending')
+│
+▼
+[ Redis Message Broker ]
+│
+▼
+[ Celery Worker Pool ]
+│
+(Descompactação segura / Sanitização / Análise)
+│
+▼
+[ Banco Postgres (Neon) ]
+│
+▼
+[ Dashboard React ] ◄── (Query Analytics & Reports) ───┘
 
-## Stack tecnológica
+---
 
-| Camada     | Tecnologias |
-|------------|-------------|
-| Backend    | Python 3.13, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2, Pytest |
-| Fila/Workers | Celery, Redis |
-| Banco de dados | PostgreSQL (Neon em produção) |
-| Frontend   | React 18, TypeScript, Vite, Tailwind CSS, React Router, Recharts |
-| Infra      | Docker, Docker Compose |
-| Deploy     | Render (API + worker), Neon (Postgres), Upstash (Redis), Vercel (frontend) |
+## Arquitetura de Sistemas
 
-## Estrutura de pastas
+A aplicação adota uma arquitetura em camadas desacoplada e escalável:
 
-```
+┌──────────────────────────┐         REST / HTTPS         ┌──────────────────────────┐
+│     Frontend Web         │ ───────────────────────────► │      Backend API         │
+│  React 18 + TS + Vite    │ ◄─────────────────────────── │  FastAPI (Python 3.13)   │
+│   Tailwind CSS (Vercel)  │                              │  Auth JWT + Rate Limit   │
+└──────────────────────────┘                              └────────────┬─────────────┘
+│
+┌──────────────────────────────┼──────────────────────────────┐
+▼                              ▼                              ▼
+┌─────────────────────┐        ┌─────────────────────┐        ┌─────────────────────┐
+│  PostgreSQL (Neon)  │        ┌  Redis (Upstash)    │        │   Workers Celery    │
+│  Camada de Dados    │        │  Broker de Mensagens│        │ Processamento Async │
+└─────────────────────┘        └─────────────────────┘        └─────────────────────┘
+
+
+### Padrão de Camadas Interno (Backend)
+`API (Routes)` ➔ `Services (Regras de Negócio & Scanner)` ➔ `Repositories (Acesso a Dados)` ➔ `Models (SQLAlchemy)`
+*Validação de dados com Schemas Pydantic em todas as fronteiras da aplicação.*
+
+---
+
+## Stack Tecnológica
+
+| Camada | Tecnologias / Ferramentas |
+| :--- | :--- |
+| **Backend** | Python 3.13, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2, Pytest |
+| **Processamento Assíncrono** | Celery, Redis |
+| **Banco de Dados** | PostgreSQL (Driver `psycopg3`), SQLite (Testes) |
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, React Router, Recharts |
+| **DevOps & Infra** | Docker, Docker Compose, Render (API + Workers), Neon DB, Upstash, Vercel |
+
+---
+
+## Estrutura do Repositório
+
+```text
 opspilot/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes/        # Endpoints HTTP (auth, projects, uploads, analyses, jobs, reports, dashboard)
-│   │   ├── services/          # Motor de análise: scanner, linguagens, TODOs, segredos, complexidade, relatórios
-│   │   ├── workers/           # Tasks Celery (pipeline de análise assíncrona)
-│   │   ├── models/            # Modelos SQLAlchemy (users, projects, analyses, jobs, reports, metrics)
-│   │   ├── repositories/      # Camada de acesso a dados
-│   │   ├── schemas/           # Schemas Pydantic (validação/serialização)
-│   │   ├── utils/             # Utilitários (extração segura de ZIP)
-│   │   └── core/              # Config, segurança/JWT, database, celery app, rate limit
-│   ├── alembic/                # Migrations
-│   ├── tests/                  # Testes Pytest (22 testes)
-│   ├── Dockerfile               # Imagem da API
-│   └── Dockerfile.worker        # Imagem do worker Celery
+│   │   ├── api/routes/
+│   │   ├── services/
+│   │   ├── workers/
+│   │   ├── models/
+│   │   ├── repositories/
+│   │   ├── schemas/
+│   │   ├── utils/
+│   │   └── core/
+│   ├── alembic/
+│   ├── tests/
+│   ├── Dockerfile
+│   └── Dockerfile.worker
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/               # Landing, Login, Register, Dashboard, AnalysisDetail, Jobs, Reports, Settings
-│   │   ├── components/          # Sidebar, StatCard, StatusBadge, ProtectedRoute
-│   │   ├── context/              # AuthContext (JWT + refresh token)
-│   │   ├── services/              # Cliente Axios + serviços de API
-│   │   └── types/                  # Tipos TypeScript compartilhados
+│   │   ├── pages/
+│   │   ├── components/
+│   │   ├── context/
+│   │   ├── services/
+│   │   └── types/
 │   └── Dockerfile
 ├── docker-compose.yml
 ├── render.yaml
 └── README.md
 ```
 
-## Funcionalidades
+## Principais Funcionalidades
 
-- **Autenticação:** registro, login, JWT de acesso + refresh token, renovação automática no frontend.
-- **Upload seguro:** ZIP com limite de tamanho, validação de extensão e proteção contra zip-slip/zip-bomb.
-- **Análise automática:** estrutura, linguagens, LOC, dependências (`requirements.txt`, `package.json`, etc.), arquivos grandes, TODO/FIXME, heurística de segredos expostos (chaves AWS, tokens, senhas em texto plano, etc.) e complexidade ciclomática aproximada.
-- **Workers assíncronos:** pipeline completo rodando em Celery, com progresso, logs, tempo de execução, contagem de tentativas e retry automático com backoff em caso de falha.
-- **Fila com estados:** `pending → processing → completed | failed`, com `retry` intermediário.
-- **Relatórios:** exportação em HTML (visual), JSON (estruturado) e CSV (planilha).
-- **Dashboard:** estatísticas agregadas, gráfico de status dos jobs, histórico de análises e projetos.
-- **Segurança:** rate limiting por IP, CORS configurável, senhas com bcrypt, JWT assinado, upload sanitizado.
+**Autenticação & Segurança:** Fluxo JWT de curta duração com sistema de Refresh Tokens, criptografia de senhas via bcrypt e suporte a Rate Limiting.
+**Upload Sanitizado:** Proteção nativa contra vulnerabilidades de descompactação (Zip-Slip e Zip-Bomb), validação de MIME types e limite configurável de payload.
+**Mecanismo de Análise Estática:** 
+● Contagem de linhas de código (LOC) por linguagem.
+● Varredura e mapeamento de dependências (requirements.txt, package.json, etc.).
+● Detecção heurística de credenciais e segredos expostos (tokens AWS, chaves API, senhas hardcoded).
+● Análise de dívida técnica (TODO / FIXME) e aproximação de complexidade ciclomática.
+● Pipeline de Workers Assíncronos: Gestão de estado de filas (pending ➔ processing ➔ completed / failed) com lógica de retry automático e backoff exponencial.
+● Exportação de Relatórios: Geração e download de relatórios consolidados nos formatos HTML, JSON e CSV.
 
-## Rodando localmente
+## Execução Local (Docker & Compose)
 
-### Pré-requisitos
-- Docker e Docker Compose instalados.
+**Pré-requisitos**
+- Docker Desktop (Engine 20.10+)
+- Docker Compose
 
-### Passos
+**Instalação e inicialização**
 
+Clone este repositório:
 ```bash
-# 1. Clone o repositório
-git clone <url-do-seu-repositorio>
+git clone https://github.com/Annaa-Clara/opspilot.git
 cd opspilot
+```
 
-# 2. Configure as variáveis de ambiente do backend
+Defina os arquivos de ambiente:
+```bash
 cp backend/.env.example backend/.env
-# edite backend/.env se quiser mudar algo (os valores padrão já funcionam com o compose)
-
-# 3. Configure o frontend
 cp frontend/.env.example frontend/.env
+```
 
-# 4. Suba tudo
+Suba o ecossistema completo:
+```bash
 docker compose up --build
 ```
 
-Isso sobe: PostgreSQL, Redis, a API (`http://localhost:8000`), o worker Celery e o frontend (`http://localhost:5173`).
+**Aplicações disponíveis após a inicialização:**
 
-A documentação interativa da API fica em `http://localhost:8000/api/docs`.
+| Serviço | URL |
+| :--- | :--- |
+| Frontend App | http://localhost:5173 |
+| Backend API | http://localhost:8000 |
+| OpenAPI / Swagger Docs | http://localhost:8000/api/docs |
 
-### Rodando sem Docker (desenvolvimento)
+---
 
-**Backend:**
+## Execução para Desenvolvimento (Sem Docker)
+
+**Backend (API & Worker)**
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
+
 pip install -r requirements-dev.txt
-cp .env.example .env   # ajuste DATABASE_URL/REDIS_URL para instâncias locais
+cp .env.example .env
+
 alembic upgrade head
+
 uvicorn app.main:app --reload
 ```
 
-**Worker (em outro terminal, mesmo venv):**
+Em um terminal separado (mesmo venv ativo):
 ```bash
 celery -A app.core.celery_app.celery_app worker --loglevel=info
 ```
 
-**Frontend:**
+**Frontend**
 ```bash
 cd frontend
 npm install
@@ -166,149 +194,74 @@ cp .env.example .env
 npm run dev
 ```
 
-## Variáveis de ambiente
+---
 
-### Backend (`backend/.env`)
+## Variáveis de Ambiente
 
-| Variável | Descrição | Exemplo |
-|---|---|---|
-| `SECRET_KEY` | Chave usada para assinar os JWTs | string aleatória longa |
-| `ALGORITHM` | Algoritmo do JWT | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Validade do access token | `30` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Validade do refresh token | `7` |
-| `DATABASE_URL` | Conexão PostgreSQL (SQLAlchemy) | `postgresql+psycopg://user:pass@host:5432/db` |
-| `REDIS_URL` | Conexão Redis (fila do Celery) | `redis://host:6379/0` |
-| `ALLOWED_ORIGINS` | Origens permitidas no CORS | `https://seuapp.vercel.app` |
-| `MAX_UPLOAD_SIZE_MB` | Limite de upload de ZIP | `50` |
-| `UPLOAD_DIR` | Diretório temporário de uploads | `/tmp/opspilot_uploads` |
-| `RATE_LIMIT` | Limite de requisições por IP | `100/minute` |
+**Backend (`backend/.env`)**
 
-### Frontend (`frontend/.env`)
+| Variável | Descrição | Valor Exemplo / Padrão |
+| :--- | :--- | :--- |
+| `SECRET_KEY` | Chave secreta para assinatura dos tokens JWT | `string_segura_comprida` |
+| `ALGORITHM` | Algoritmo criptográfico dos tokens | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Tempo de expiração do Token de Acesso | `30` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Tempo de expiração do Refresh Token | `7` |
+| `DATABASE_URL` | String de Conexão Postgres (Driver psycopg) | `postgresql+psycopg://user:pass@host:5432/db` |
+| `REDIS_URL` | URL de Conexão com a Fila Redis | `redis://host:6379/0` |
+| `ALLOWED_ORIGINS` | Origens autorizadas para requisições CORS | `https://sua-app.vercel.app` |
+| `MAX_UPLOAD_SIZE_MB` | Limite máximo do arquivo ZIP enviado | `50` |
 
-| Variável | Descrição | Exemplo |
-|---|---|---|
-| `VITE_API_BASE_URL` | URL base da API | `https://opspilot-api.onrender.com/api/v1` |
+**Frontend (`frontend/.env`)**
 
-## Testes
+| Variável | Descrição | Valor Exemplo / Padrão |
+| :--- | :--- | :--- |
+| `VITE_API_BASE_URL` | Endpoint base de comunicação com a API | `https://api.opspilot.com/api/v1` |
 
-**Backend (22 testes, usando SQLite em memória — não precisa de Postgres/Redis rodando):**
+---
+
+## Suíte de Testes
+
+Os testes automatizados utilizam SQLite em memória para a camada de backend, dispensando dependências externas (Postgres/Redis) no ambiente de testes.
+
+**Executar testes de Backend**
 ```bash
 cd backend
 source .venv/bin/activate
 pytest -v
 ```
 
-**Frontend:**
+**Executar testes de Frontend**
 ```bash
 cd frontend
 npm run test
 ```
 
-## Deploy em produção
+---
 
-Veja o [guia passo a passo para iniciantes](#guia-passo-a-passo-para-iniciantes) abaixo — ele cobre Neon, Upstash, Render, Vercel e GitHub do zero.
+## Implantação e Infraestrutura (Deploy)
 
-Resumo técnico:
-- **Neon:** crie um banco Postgres e copie a *connection string* para `DATABASE_URL`.
-- **Upstash:** crie um banco Redis e copie a URL para `REDIS_URL`.
-- **Render:** use o `render.yaml` (Blueprint) na raiz do repositório para subir a API e o worker de uma vez, ou crie os dois serviços manualmente com os `Dockerfile`/`Dockerfile.worker`.
-- **Vercel:** aponte para a pasta `frontend`, com `VITE_API_BASE_URL` configurado para a URL pública da API no Render.
+A arquitetura do projeto foi desenhada para fácil implantação em serviços de nuvem modernos:
 
-## Segurança
-
-- Senhas com hash `bcrypt` (nunca armazenadas em texto plano).
-- JWT de acesso de curta duração + refresh token de longa duração.
-- Rate limiting por IP em rotas sensíveis (`slowapi`).
-- CORS restrito às origens configuradas.
-- Upload de ZIP validado por extensão, tamanho máximo e proteção contra path traversal (zip-slip) e zip bomb.
-- Scanner heurístico de segredos (chaves de API, tokens, senhas em texto plano, URLs de banco com credenciais) rodando em toda análise.
+- **Database:** Serverless PostgreSQL via Neon DB.
+- **Cache & Message Broker:** Serverless Redis via Upstash.
+- **Backend API & Workers:** Hospedagem containerizada via Render, utilizando a especificação do `render.yaml`.
+- **Frontend Web:** Deploy contínuo via Vercel.
 
 ---
 
-## Guia passo a passo para iniciantes
+## Práticas de Segurança
 
-Este guia assume que você nunca fez deploy de nada. Vamos com calma.
-
-### 1. Como abrir o projeto
-
-Descompacte o arquivo `.zip` que você recebeu em uma pasta no seu computador (ex: `Documentos/opspilot`). Abra essa pasta no VS Code (ou seu editor preferido).
-
-### 2. Como instalar as dependências
-
-Você precisa ter instalado: [Python 3.13](https://www.python.org/downloads/), [Node.js 22+](https://nodejs.org/) e [Docker Desktop](https://www.docker.com/products/docker-desktop/) (mais fácil) — ou Python/Node locais se preferir não usar Docker.
-
-**Caminho mais simples (Docker):** basta ter o Docker Desktop instalado e aberto.
-
-### 3. Como configurar o `.env`
-
-Dentro da pasta `backend`, copie o arquivo de exemplo:
-```bash
-cp backend/.env.example backend/.env
-```
-Abra `backend/.env` num editor de texto. Para rodar localmente, os valores padrão já funcionam. Troque apenas `SECRET_KEY` por uma string aleatória longa (pode gerar uma em https://randomkeygen.com/).
-
-Faça o mesmo para o frontend:
-```bash
-cp frontend/.env.example frontend/.env
-```
-
-### 4. Como subir localmente
-
-Na raiz do projeto (pasta `opspilot`), rode:
-```bash
-docker compose up --build
-```
-Aguarde as mensagens de log pararem de "pular" muito — quando aparecer `Uvicorn running on http://0.0.0.0:8000` a API está de pé. Abra `http://localhost:5173` no navegador para ver o site, e `http://localhost:8000/api/docs` para ver a documentação da API.
-
-### 5. Como criar um banco no Neon
-
-1. Acesse https://neon.tech e crie uma conta gratuita.
-2. Clique em "Create a project", dê um nome (ex: `opspilot`) e escolha uma região.
-3. Na página do projeto, copie a **Connection String** (algo como `postgresql://usuario:senha@ep-xxxx.neon.tech/neondb?sslmode=require`).
-4. Troque o prefixo `postgresql://` por `postgresql+psycopg://` e cole no `DATABASE_URL` (no Render, você vai colar isso como variável de ambiente — veja o passo 7).
-
-### 6. Como criar um Redis no Upstash
-
-1. Acesse https://upstash.com e crie uma conta gratuita.
-2. Clique em "Create Database", escolha o tipo Redis, dê um nome e escolha uma região próxima do seu backend (Render costuma usar Oregon/US).
-3. Na página do banco, copie a URL no formato `rediss://...` (Upstash já fornece pronta para uso).
-4. Essa URL vai virar a variável `REDIS_URL` no Render.
-
-### 7. Como fazer deploy no Render
-
-1. Acesse https://render.com e crie uma conta (dá para logar com GitHub).
-2. Clique em "New +" → "Blueprint" e selecione o repositório do OpsPilot no GitHub (veja o passo 9 se ainda não subiu pro GitHub).
-3. O Render vai detectar o arquivo `render.yaml` na raiz e propor criar dois serviços: `opspilot-api` (web) e `opspilot-worker` (worker).
-4. Antes de confirmar, preencha as variáveis marcadas como "sync: false":
-   - `DATABASE_URL` → a connection string do Neon (com `postgresql+psycopg://`).
-   - `REDIS_URL` → a URL do Upstash.
-   - `ALLOWED_ORIGINS` → a URL do seu frontend na Vercel (ex: `https://opspilot.vercel.app`), depois de feito o passo 8.
-5. Clique em "Apply" e aguarde o build. Quando terminar, copie a URL pública da API (ex: `https://opspilot-api.onrender.com`).
-
-### 8. Como fazer deploy na Vercel
-
-1. Acesse https://vercel.com e crie uma conta (pode logar com GitHub).
-2. Clique em "Add New..." → "Project" e selecione o repositório do OpsPilot.
-3. Em "Root Directory", selecione a pasta `frontend`.
-4. Em "Environment Variables", adicione `VITE_API_BASE_URL` com o valor `https://opspilot-api.onrender.com/api/v1` (troque pela URL real da sua API no Render, com `/api/v1` no final).
-5. Clique em "Deploy". Ao terminar, a Vercel te dá uma URL pública (ex: `https://opspilot.vercel.app`).
-6. Volte no Render e atualize a variável `ALLOWED_ORIGINS` da API com essa URL da Vercel, para o CORS liberar o acesso.
-
-### 9. Como colocar no GitHub
-
-1. Crie uma conta em https://github.com se ainda não tiver.
-2. No site do GitHub, clique em "New repository", dê um nome (ex: `opspilot`) e crie (pode deixar privado ou público).
-3. No terminal, dentro da pasta do projeto:
-```bash
-git init
-git add .
-git commit -m "Primeiro commit do OpsPilot"
-git branch -M main
-git remote add origin https://github.com/SEU_USUARIO/opspilot.git
-git push -u origin main
-```
-4. Pronto — agora o Render e a Vercel conseguem enxergar o repositório para fazer deploy automático a cada `git push`.
+- Hash de senhas armazenado via algoritmos fortes com salting (bcrypt).
+- Isolamento de processamento de arquivos compactados e prevenção de exaustão de recursos.
+- Validação estrita de parâmetros de entrada utilizando Pydantic em todas as rotas da API REST.
+- Middleware configurado para restrição de requisições maliciosas por IP (Rate Limiting).
 
 ---
 
-**Bom projeto de portfólio! 🎯** Qualquer dúvida durante o deploy, revise as variáveis de ambiente primeiro — a maioria dos problemas de "não conecta" vem de uma `DATABASE_URL`, `REDIS_URL` ou `ALLOWED_ORIGINS` mal configurada.
+## Autora
+
+Desenvolvido por **Anna Clara de Medeiros Gonçalves**.
+
+- **LinkedIn:** [Anna Clara de Medeiros Gonçalves](https://www.linkedin.com/in/anna-clara-de-medeiros-gon%C3%A7alves-b6537a2ba)
+- **GitHub:** [@Annaa-Clara](https://github.com/Annaa-Clara)
+- **Portfólio:** [Acesse meu Portfólio](https://annaa-clara.github.io/anna-clara-portfolio/)
